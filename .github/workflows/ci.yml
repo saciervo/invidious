@@ -87,6 +87,9 @@ jobs:
       - name: Run tests
         run: crystal spec
 
+      - name: Test Companion proxy failure handling
+        run: crystal spec spec/invidious/companion_proxy_spec.cr -Drunning_by_self
+
       - name: Build
         run: crystal build --warnings all --error-on-warnings --stats --time --progress --error-trace src/invidious.cr
 

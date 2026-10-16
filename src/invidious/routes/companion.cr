@@ -7,12 +7,13 @@ module Invidious::Routes::Companion
     end
 
     begin
-      COMPANION_POOL.client do |wrapper|
+      COMPANION_POOL.client(retry_on_error: false) do |wrapper|
         wrapper.client.get(url, env.request.headers) do |resp|
           return self.proxy_companion(env, resp)
         end
       end
-    rescue
+    rescue ex
+      self.proxy_error(env, ex)
     end
   end
 
@@ -24,12 +25,13 @@ module Invidious::Routes::Companion
     end
 
     begin
-      COMPANION_POOL.client do |wrapper|
+      COMPANION_POOL.client(retry_on_error: false) do |wrapper|
         wrapper.client.post(url, env.request.headers, env.request.body) do |resp|
           return self.proxy_companion(env, resp)
         end
       end
-    rescue
+    rescue ex
+      self.proxy_error(env, ex)
     end
   end
 
@@ -40,13 +42,29 @@ module Invidious::Routes::Companion
     end
 
     begin
-      COMPANION_POOL.client do |wrapper|
+      COMPANION_POOL.client(retry_on_error: false) do |wrapper|
         wrapper.client.options(url, env.request.headers) do |resp|
           return self.proxy_companion(env, resp)
         end
       end
-    rescue
+    rescue ex
+      self.proxy_error(env, ex)
     end
+  end
+
+  private def self.proxy_error(env, exception)
+    # Query strings and upstream error messages can contain signed URLs or credentials.
+    LOGGER.error("Companion proxy: #{env.request.method} #{env.request.path} failed (#{exception.class})")
+    return if env.response.closed?
+
+    env.response.headers["Connection"] = "close"
+    begin
+      env.response.respond_with_status(:bad_gateway)
+    rescue IO::Error
+      # Headers may already have been sent; do not append an error to a media stream.
+      env.response.close
+    end
+    nil
   end
 
   private def self.proxy_companion(env, response)

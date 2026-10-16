@@ -24,7 +24,12 @@ struct YoutubeConnectionPool
       conn.close
       conn = make_client(url, force_resolve: true)
 
-      response = yield conn
+      begin
+        response = yield conn
+      rescue ex
+        conn.close
+        raise ex
+      end
     ensure
       pool.release(conn)
     end
@@ -83,19 +88,25 @@ struct CompanionConnectionPool
     end
   end
 
-  def client(&)
+  def client(retry_on_error : Bool = true, &)
     wrapper = pool.checkout
 
     begin
       response = yield wrapper
-    rescue
+    rescue ex
       wrapper.close
+      raise ex unless retry_on_error
 
       companion = CONFIG.invidious_companion.sample
       make_client(companion.private_url, use_http_proxy: false)
       wrapper = CompanionWrapper.new(companion: companion)
 
-      response = yield wrapper
+      begin
+        response = yield wrapper
+      rescue ex
+        wrapper.close
+        raise ex
+      end
     ensure
       pool.release(wrapper)
     end
